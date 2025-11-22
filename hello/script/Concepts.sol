@@ -45,3 +45,38 @@ contract loopsExamples {
         return sum;
     }
 }
+
+contract MappingExample {
+    mapping(address => uint256) public balances;
+
+
+    function updateBalance(uint256 balance) public {
+        balances[msg.sender] = balance;
+    }
+
+    mapping(address => mapping(address => bool)) public isAuthorized;
+
+    function authorize(address spender) public {
+        isAuthorized[msg.sender][spender] = true;
+    }
+}
+
+contract ArraryExample {
+    //fixed size array
+    uint256[5] public fixedArray;
+
+    //dynamic arrays
+    uint256[] public dynamicArray;
+
+    function addValue(uint256 value) public {
+        dynamicArray.push(value);
+    }
+
+    function updatedFixedArray(uint256 value, uint256 index) public {
+        fixedArray[index] = value;
+    }
+
+    function lengthArray() public view returns(uint256) {
+        return dynamicArray.length;
+    }
+}
