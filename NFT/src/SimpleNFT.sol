@@ -1,12 +1,19 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
+import "@openzeppelin/contracts/utils/Strings.sol";
+
 contract SimpleNFT {
+    using Strings for uint256;
 
     string public name = "SimpleNFT";
     string public symbol = "SNFT";
 
+    string private _baseTokenURI="ipfs://bafybeic6wqpfhyw4qcm6qthbmh7a4ixexmxodmeoy67odqg2padhsecixi";
+
     uint256 public totalSupply = 0;
+
+    uint256 public price = 0.025 ether;
 
     mapping(address => uint256) public _balances;
 
@@ -35,7 +42,7 @@ contract SimpleNFT {
     );
 
     function mint(address _to) external payable returns (uint256) {
-        // require(msg.value==price,"Invalid amount sent!");
+        require(msg.value==price,"Invalid amount sent!");
         uint256 tokenId = totalSupply++;
         _balances[_to] += 1;
         _owners[tokenId] = _to;
@@ -112,5 +119,13 @@ contract SimpleNFT {
         address _operator
     ) external view returns (bool) {
         return _operatorApprovals[_owner][_operator];
+    }
+
+     function tokenURI(uint256 _tokenId) public view returns (string memory) {
+        return string.concat(baseTokenURI(), Strings.toString(_tokenId), ".json");
+    }
+
+     function baseTokenURI() public view returns (string memory) {
+        return _baseTokenURI;
     }
 }
