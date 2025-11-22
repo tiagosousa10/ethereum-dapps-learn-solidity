@@ -111,7 +111,7 @@ contract structExample {
 
     constructor() {
         _person = Person({name: "Tiago", age: 22, wallet: msg.sender});
-        _person = Person({"Andre", 23, msg.sender});
+        _person = Person({name: "Andre", age: 23,wallet: msg.sender});
     }
 }
 
