@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 contract NFTMarketplace is Ownable {
     uint256 public marketplaceFee = 250; // 2.5%
     uint256 public listingCounter = 0;
+    uint256 public offerCounter = 0;
+
 
     uint256 public constant MAX_FEE = 1000; // 10%
 
@@ -31,11 +33,25 @@ contract NFTMarketplace is Ownable {
         bool active;
     }
 
+        struct Offer {
+        uint256 offerId;
+        address nftContract;
+        uint256 tokenId;
+        address buyer;
+        uint256 amount;
+        uint256 expiration;
+        bool active;
+    }
+
+
     mapping(uint256 => Listing) public listings;
     mapping(address => mapping(uint256 => uint256)) public nftToListing;
 
     mapping(uint256 => Auction) public auctions;
     mapping(address => mapping(uint256 => uint256)) public nftToAuction;
+
+     mapping(uint256 => Offer) public offers;
+    mapping(address => mapping(uint256 => uint256[])) public nftToOffer;
 
     event ListingCreated(
         uint256 indexed listingId,
@@ -53,6 +69,8 @@ contract NFTMarketplace is Ownable {
         uint256 startingPrice,
         uint256 endTime
     );
+
+
 
     event BidPlaced(
         uint256 indexed auctionId,
@@ -73,6 +91,19 @@ contract NFTMarketplace is Ownable {
         address indexed buyer,
         uint256 price
     );
+
+    event OfferCreated(
+        uint256 indexed offerId,
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        address buyer,
+        uint256 amount,
+        uint256 expiration
+    );
+    event OfferAccepted(uint256 indexed offerId);
+    event OfferCancelled(uint256 indexed offerId);
+
+
     event MarketPlaceFeeUpdated(uint256 newFee);
 
 
@@ -245,4 +276,52 @@ contract NFTMarketplace is Ownable {
             emit AuctionEnded(auctionId, address(0), 0);
         }
     }
+
+    // Offer System
+    function makeOffer(address nftContract, uint256 tokenId, uint256 expiration) external payable{
+        require(msg.value > 0, "Offer must be greater than 0");
+        require(expiration> block.timestamp, "Expiration must be in the future");
+        require(expiration<= block.timestamp + 30 days, "Expiration must be less than 30 days");
+        require(IERC721(nftContract).ownerOf(tokenId) == msg.sender, "You are not the owner of this NFT");
+
+        offerCounter++;
+
+        offers[offerCounter] = Offer({
+            offerId: offerCounter,
+            nftContract: nftContract,
+            tokenId: tokenId,
+            buyer:msg.sender,
+            amount: msg.value
+            expiration: expiration,
+            active:true
+        });
+
+        nftToOffer[nftContract][tokenId].push(offerCounter);
+
+        emit OfferCreated(offerCounter, nftContract, tokenId, msg.sender, msg.value, expiration);
+
+    }
+
+    function acceptOffer(uint256 offerId) external {
+        Offer storage offer= offers[offerId];
+        require(offer.active, "Offer is not active");
+        require(offer.expiration > block.timestamp, "Offer has expired");
+        require(IERC721(offer.nftContract).ownerOf(offer.tokenId) == msg.sender, "You are not the owner of this NFT");
+
+        uint256 fee = (offer.amount * marketplaceFee) / 10000;
+        uint256 sellerAmount = offer.amount - fee;
+
+        offer.active = false;
+
+        IERC721(offer.nftContract).safeTransferFrom(
+            msg.sender,
+            offer.buyer,
+            offer.tokenId
+        )
+
+        payable(msg.sender).transfer(sellerAmount);
+
+        emit OfferAccepted(offer.offerId);
+    }
+
 }
