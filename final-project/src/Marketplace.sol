@@ -8,6 +8,8 @@ contract NFTMarketplace is Ownable {
     uint256 public marketplaceFee = 250; // 2.5%
     uint256 public listingCounter = 0;
 
+    uint256 public constant MAX_FEE = 1000; // 10%
+
     struct Listing {
         uint256 listingId;
         address nftContract;
@@ -35,6 +37,8 @@ contract NFTMarketplace is Ownable {
         address indexed buyer,
         uint256 price
     );
+    event MarketPlaceFeeUpdated(uint256 newFee);
+
 
     constructor() Ownable(msg.sender) {
         emit MarketPlaceCreated(msg.sender);
@@ -94,7 +98,10 @@ contract NFTMarketplace is Ownable {
             listing.tokenId
         )
 
-        payable(listing.seller).transfer(listing.price);
+        uint256 fee = (listing.price * marketplaceFee) /10000;
+        uint256 sellerAmount = listing.price - fee;
+
+        payable(listing.seller).transfer(sellerAmount);
 
         if(msg.value > listing.price) {
             payable(msg.sender).transfer(msg.value - listing.price);
@@ -102,5 +109,21 @@ contract NFTMarketplace is Ownable {
 
         emit ListingPurchased(listingId, msg.sender, listing.price);
 
+    }
+
+
+    //marketplace fee
+
+    function withdrawFees() external onlyOwner {
+        uint256 balance = address(this).balance;
+
+        require(balance > 0, "No fees to withdraw");
+        payable(owner()).transfer(balance);
+    }
+
+    function updateMarketplaceFee(uint256 newFee) external onlyOwner {
+        require(newFee <= MAX_FEE, "Fee cannot be greater than 10%");
+        marketplaceFee = newFee;
+        emit MarketPlaceFeeUpdated(newFee);
     }
 }
