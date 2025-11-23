@@ -3,11 +3,14 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-contract NFTMarketplace is Ownable {
+contract NFTMarketplace is Ownable, ReentrancyGuard {
     uint256 public marketplaceFee = 250; // 2.5%
     uint256 public listingCounter = 0;
     uint256 public offerCounter = 0;
+
+    bool public marketplacePaused = false;
 
 
     uint256 public constant MAX_FEE = 1000; // 10%
@@ -33,7 +36,7 @@ contract NFTMarketplace is Ownable {
         bool active;
     }
 
-        struct Offer {
+    struct Offer {
         uint256 offerId;
         address nftContract;
         uint256 tokenId;
@@ -50,7 +53,7 @@ contract NFTMarketplace is Ownable {
     mapping(uint256 => Auction) public auctions;
     mapping(address => mapping(uint256 => uint256)) public nftToAuction;
 
-     mapping(uint256 => Offer) public offers;
+    mapping(uint256 => Offer) public offers;
     mapping(address => mapping(uint256 => uint256[])) public nftToOffer;
 
     event ListingCreated(
@@ -60,7 +63,6 @@ contract NFTMarketplace is Ownable {
         address seller,
         uint256 price
     );
-
     event AuctionCreated(
         uint256 indexed auctionId,
         address indexed nftContract,
@@ -69,9 +71,6 @@ contract NFTMarketplace is Ownable {
         uint256 startingPrice,
         uint256 endTime
     );
-
-
-
     event BidPlaced(
         uint256 indexed auctionId,
         address indexed bidded,
@@ -82,16 +81,13 @@ contract NFTMarketplace is Ownable {
         address indexed winner,
         uint256 amount
     );
-
     event ListingCancelled(uint256 indexed listingId);
     event MarketPlaceCreated(address indexed owner);
-
     event ListingPurchased(
         uint256 indexed listingId,
         address indexed buyer,
         uint256 price
     );
-
     event OfferCreated(
         uint256 indexed offerId,
         address indexed nftContract,
@@ -102,14 +98,30 @@ contract NFTMarketplace is Ownable {
     );
     event OfferAccepted(uint256 indexed offerId);
     event OfferCancelled(uint256 indexed offerId);
-
-
     event MarketPlaceFeeUpdated(uint256 newFee);
+
+    event MarketplacePaused();
+    event MarketplaceUnpaused();
 
 
     constructor() Ownable(msg.sender) {
         emit MarketPlaceCreated(msg.sender);
     }
+
+    function pauseMarketplace() external onlyOwner {
+        marketplacePaused = true;
+        emit MarketplacePaused();
+    }
+    function unpauseMarketplace() external onlyOwner {
+        marketplacePaused = false;
+        emit MarketplacePaused();
+    }
+
+    modifier whenNotPaused() {
+        require(!marketplacePaused, "Marketplace is paused");
+        _;
+    }
+
 
     function createListing(address nftContract, uint256 tokenId, uint256 price) external {
         require(price > 0 , "Price must be greater than 0");
@@ -150,11 +162,11 @@ contract NFTMarketplace is Ownable {
     }
 
     //Purchase
-    function purchaseListing(uint256 listingId) external payable {
+    function purchaseListing(uint256 listingId) external payable nonReentrant whenNotPaused {
         Listing storage listing = listings[listingId];
         require(listing.active, "Listing is not active");
         require(listing.price >= msg.value , "Insufficient funds");
-        require(msg.sender === listing.seller, "Cannot purchase your own listing");
+        require(msg.sender == listing.seller, "Cannot purchase your own listing");
 
         listing.active = false;
         nftToListing[listing.nftContract][listing.tokenId] = 0;
@@ -227,7 +239,7 @@ contract NFTMarketplace is Ownable {
 
 
 
-    function placeBid(uint256 auctionId) external payable {
+    function placeBid(uint256 auctionId) external payable nonReentrant whenNotPaused {
         Auction storage auction = auctions[auctionId];
 
         require(auction.active, "Auction is not active");
@@ -250,7 +262,7 @@ contract NFTMarketplace is Ownable {
         emit BidPlaced(auctionId, msg.sender, msg.value);
     }
 
-    function endAuction(uint256 auctionId) external payable {
+    function endAuction(uint256 auctionId) external payable nonReentrant whenNotPaused{
         Auction storage auction = auctions[auctionId];
 
         require(auction.active, "Auction is not active");
@@ -302,7 +314,7 @@ contract NFTMarketplace is Ownable {
 
     }
 
-    function acceptOffer(uint256 offerId) external {
+    function acceptOffer(uint256 offerId) external nonReentrant whenNotPaused {
         Offer storage offer= offers[offerId];
         require(offer.active, "Offer is not active");
         require(offer.expiration > block.timestamp, "Offer has expired");
@@ -324,7 +336,7 @@ contract NFTMarketplace is Ownable {
         emit OfferAccepted(offer.offerId);
     }
 
-    function cancelOffer(uint256 offerId) external {
+    function cancelOffer(uint256 offerId) external nonReentrant whenNotPaused {
         Offer storage offer= offers[offerId];
         require(offer.active, "Offer is not active");
         require(msg.sender == offer.buyer, "Not your offer");
@@ -336,4 +348,107 @@ contract NFTMarketplace is Ownable {
         emit OfferCancelled(offer.offerId);
     }
 
+    //get all listings
+    function getActiveListings(uint256 offset, uint256 limit) external view returns(Listing[] memory) {
+        uint256 activeCount = 0;
+        for(uint256 i = 1; i <= listingCounter; i++) {
+            if(listing[i].active) {
+                activeCount++;
+            }
+        }
+
+        if(offset >= activeCount ) {
+            return new Listing[](0); //return empty array
+        }
+
+        uint256 returnCount = limit;
+
+        if(offset + limit > activeCount) {
+            returnCount = activeCount - offset;
+        }
+
+        Listing[] memory results = new Listing[](returnCount);
+
+        uint256 currentIndex = 0;
+        uint256 resultIndex = 0;
+
+         for(uint256 i = 1; i <= listingCounter && resultIndex < returnCount; i++) {
+            if(listing[i].active) {
+                if(currentIndex >= offset) {
+                    results[resultIndex] = listing[i];
+                    resultIndex++;
+                }
+                currentIndex++;
+            }
+        }
+        return results;
+    }
+
+    function getOffersForNFT(address nftContract, uint256 tokenId) external view returns(Offer[] memory) {
+        uint256[] memory offerIds = nftToOffer[nftContract][tokenId];
+        uint256 activeCount = 0;
+
+        for(uint256 i=0; i< offerIds.length; i++) {
+            if(offers[offerIds[i]].active && block.timestamp <= offers[offerIds[i]].expiration) {
+                activeCount++;
+            }
+        }
+
+        Offer[] memory results = new Offer[](activeCount);
+        uint256 resultCount = 0;
+
+         for(uint256 i=0; i< offerIds.length && resultCount < activeCount; i++) {
+            if(offers[offerIds[i]].active && block.timestamp <= offers[offerIds[i]].expiration) {
+                results[resultCount] = offers[offerIds[i]];
+                resultCount++;
+            }
+        }
+
+        returns results;
+    }
+
+    function getUserListings(address user) external view returns(Listing[] memory) {
+        uint256 activeCount = 0;
+
+        for(uint256 i=0; i< listingCounter; i++) {
+            if(listing[i].seller == user && listing[i].active) {
+                activeCount++;
+            }
+        }
+
+        Listing[] memory results = new Listing[](activeCount);
+        uint256 resultCount = 0;
+
+         for(uint256 i=0; i< listingCounter && resultCount < activeCount; i++) {
+            if(listings[i].seller == user && listings[i].active) {
+                results[resultCount] = listings[i]];
+                resultCount++;
+            }
+        }
+
+        returns results;
+    }
+
+
+      function getOffersOfUser(address user) external view returns(Offer[] memory) {
+        uint256 activeCount = 0;
+
+        for(uint256 i=0; i< offerCounter; i++) {
+            if(offers[i].active && block.timestamp <= offers[i].expiration && offers[i].buyer == user) {
+                activeCount++;
+            }
+        }
+
+        Offer[] memory results = new Offer[](activeCount);
+        uint256 resultCount = 0;
+
+         for(uint256 i=0; i< offerCounter && resultCount < activeCount; i++) {
+            if(offers[i].active && block.timestamp <= offers[i].expiration && offers[i].buyer == user) {
+                results[resultCount] = offers[i];
+                resultCount++;
+            }
+        }
+
+        returns results;
+    }
 }
