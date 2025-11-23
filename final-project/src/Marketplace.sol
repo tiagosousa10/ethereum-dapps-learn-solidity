@@ -19,15 +19,51 @@ contract NFTMarketplace is Ownable {
         bool active;
     }
 
+    struct Auction {
+        uint256 auctionId;
+        address nftContract;
+        uint256 tokenId;
+        address seller;
+        uint256 startingPrice;
+        uint256 currentBid;
+        address currentBider;
+        uint256 endTime;
+        bool active;
+    }
+
     mapping(uint256 => Listing) public listings;
     mapping(address => mapping(uint256 => uint256)) public nftToListing;
+
+    mapping(uint256 => Auction) public auctions;
+    mapping(address => mapping(uint256 => uint256)) public nftToAuction;
 
     event ListingCreated(
         uint256 indexed listingId,
         address indexed nftContract,
         uint256 indexed tokenId,
         address seller,
-        uint256 price);
+        uint256 price
+    );
+
+    event AuctionCreated(
+        uint256 indexed auctionId,
+        address indexed nftContract,
+        uint256 indexed tokenId,
+        address seller,
+        uint256 startingPrice,
+        uint256 endTime
+    );
+
+    event BidPlaced(
+        uint256 indexed auctionId,
+        address indexed bidded,
+        uint256 amount
+    );
+    event AuctionEnded(
+        uint256 indexed auctionId,
+        address indexed winner,
+        uint256 amount
+    );
 
     event ListingCancelled(uint256 indexed listingId);
     event MarketPlaceCreated(address indexed owner);
@@ -111,9 +147,7 @@ contract NFTMarketplace is Ownable {
 
     }
 
-
     //marketplace fee
-
     function withdrawFees() external onlyOwner {
         uint256 balance = address(this).balance;
 
@@ -125,5 +159,90 @@ contract NFTMarketplace is Ownable {
         require(newFee <= MAX_FEE, "Fee cannot be greater than 10%");
         marketplaceFee = newFee;
         emit MarketPlaceFeeUpdated(newFee);
+    }
+
+    //Auction
+    function createAuction(address nftContract, uint256 tokenId, uint256 startingPrice, uint256 duration) external {
+            require(price > 0 , "Price must be greater than 0");
+            require(nftContract != address(0), "Invalid NFT address");
+
+            require(IERC721(nftContract).ownerOf(tokenId) == msg.sender, "You are not the owner of this NFT");
+
+            require(duration >= 1 hours && duration <=30 days, "Duration must be between 1 hour and 30 days");
+
+            require(nftToAuction[nftContract][tokenId] == 0, "NFT is already listed for auction");
+
+            require(IERC721(nftContract).isApprovedForAll(msg.sender, address(this)) || IERC721(nftContract).getApproved(tokenId) == address(this), "You are not the approved contract for this NFT");
+
+            listingCounter += 1;
+
+            auctions[listingCounter] = Auction({
+                auctionId: listingCounter,
+                nftContract: nftContract,
+                tokenId: tokenId,
+                seller: msg.sender,
+                startingPrice: startingPrice,
+                currentBid : 0,
+                currentBider: address(0),
+                endTime: block.timestamp + duration,
+                active: true
+            });
+
+            nftToAuction[nftContract][tokenId] = listingCounter;
+
+            emit AuctionCreated(listingCounter, nftContract, tokenId, msg.sender, startingPrice, block.timestamp + duration);
+
+        }
+
+
+
+    function placeBid(uint256 auctionId) external payable {
+        Auction storage auction = auctions[auctionId];
+
+        require(auction.active, "Auction is not active");
+        require(block.timestamp < auction.endTime, "Auction has ended");
+        require(msg.sender != auction.seller, "You cannot bid on your own listing");
+        require(msg.value > auction.currentBid, "Bid must be higher than current bid");
+        require(msg.value >= acution.startingPrice, "Bid must be higher than starting price");
+
+        if(auction.currentBider != address(0) {
+            payable(auction.currentBider).transfer(auction.currentBid);
+        }
+
+        auction.currentBid = msg.value;
+        auction.currentBider = msg.sender;
+
+        if(auction.endTime - block.timestamp < 10 minutes) {
+            auction.endTime = block.timestamp + 10 minutes;
+        }
+
+        emit BidPlaced(auctionId, msg.sender, msg.value);
+    }
+
+    function endAuction(uint256 auctionId) external payable {
+        Auction storage auction = auctions[auctionId];
+
+        require(auction.active, "Auction is not active");
+        require(block.timestamp < auction.endTime, "Auction has ended");
+
+        auction.active = false;
+        nftToAuction[auction.nftContract][auction.tokenId] = 0;
+
+        if(auction.currentBider != address(0)) {
+            uint256 fee = (auction.currentBid * marketplaceFee) / 10000;
+            uint256 sellerAmount = auction.currentBid - fee;
+
+            IERC721(auction.nftContract).safeTransferFrom(
+                auction.seller,
+                auction.currentBider,
+                auction.tokenId
+            )
+
+            payable(auction.seller).transfer(sellerAmount);
+
+            emit AuctionEnded(auctionId, auction.currentBider, auction.currentBid);
+        } else {
+            emit AuctionEnded(auctionId, address(0), 0);
+        }
     }
 }
