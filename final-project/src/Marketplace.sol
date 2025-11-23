@@ -324,4 +324,16 @@ contract NFTMarketplace is Ownable {
         emit OfferAccepted(offer.offerId);
     }
 
+    function cancelOffer(uint256 offerId) external {
+        Offer storage offer= offers[offerId];
+        require(offer.active, "Offer is not active");
+        require(msg.sender == offer.buyer, "Not your offer");
+
+        offer.active = false;
+
+        payable(msg.sender).transfer(offer.amount);
+
+        emit OfferCancelled(offer.offerId);
+    }
+
 }
