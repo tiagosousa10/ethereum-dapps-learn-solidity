@@ -165,8 +165,8 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
     function purchaseListing(uint256 listingId) external payable nonReentrant whenNotPaused {
         Listing storage listing = listings[listingId];
         require(listing.active, "Listing is not active");
-        require(listing.price >= msg.value , "Insufficient funds");
-        require(msg.sender == listing.seller, "Cannot purchase your own listing");
+        require(msg.value >= listing.price  , "Insufficient funds");
+        require(msg.sender != listing.seller, "Cannot purchase your own listing");
 
         listing.active = false;
         nftToListing[listing.nftContract][listing.tokenId] = 0;
@@ -175,7 +175,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
             listing.seller,
             msg.sender,
             listing.tokenId
-        )
+        );
 
         uint256 fee = (listing.price * marketplaceFee) /10000;
         uint256 sellerAmount = listing.price - fee;
@@ -266,7 +266,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         Auction storage auction = auctions[auctionId];
 
         require(auction.active, "Auction is not active");
-        require(block.timestamp < auction.endTime, "Auction has ended");
+        require(block.timestamp >= auction.endTime, "Auction has not ended");
 
         auction.active = false;
         nftToAuction[auction.nftContract][auction.tokenId] = 0;
@@ -294,7 +294,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard {
         require(msg.value > 0, "Offer must be greater than 0");
         require(expiration> block.timestamp, "Expiration must be in the future");
         require(expiration<= block.timestamp + 30 days, "Expiration must be less than 30 days");
-        require(IERC721(nftContract).ownerOf(tokenId) == msg.sender, "You are not the owner of this NFT");
+        require(IERC721(nftContract).ownerOf(tokenId) != msg.sender, "You cannot make an offer on your own NFT");
 
         offerCounter++;
 
